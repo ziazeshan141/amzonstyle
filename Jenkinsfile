@@ -1,12 +1,12 @@
 /*
 ===============================================================================
- amzonstyle CI/CD Pipeline (single Node.js app)
+ amzonstyle Microservices CI/CD Pipeline (Node.js)
 ===============================================================================
 
  Pipeline:
    1. Checkout
-   2. Install & Build
-   3. Unit Test
+   2. Install Dependencies (npm)
+   3. Unit Tests (npm)
    4. Trivy Source Scan
    5. Docker Build
    6. Trivy Docker Image Scan
@@ -14,15 +14,46 @@
    8. Kubernetes Deployment
    9. Verify Deployment
 
- NOTE: SonarQube and OWASP Dependency Check were removed for now since
- they were configured for Maven/Java. Re-add later with sonar-scanner
- CLI and the OWASP dependency-check CLI (pointed at package-lock.json)
+ NOTE: SonarQube and OWASP Dependency Check were removed since they were
+ configured for Maven/Java. Re-add later with sonar-scanner CLI and the
+ OWASP dependency-check CLI (pointed at each service's package-lock.json)
  if/when you want them back.
+
+ Repo layout expected (one folder per service, each with its own
+ package.json + Dockerfile, except 'frontend' which is a static site
+ with no package.json):
+
+   auth-service/         user-service/        product-service/
+   cart-service/         order-service/       payment-service/
+   notification-service/ api-gateway/         catalog-service/
+   inventory-service/    shipping-service/    recommendation-service/
+   review-service/       search-service/      frontend/
 
 ===============================================================================
 */
 
-def APP_NAME = 'amzonstyle'
+// All services that get built, scanned, pushed, and deployed
+def services = [
+    'auth-service',
+    'user-service',
+    'product-service',
+    'cart-service',
+    'order-service',
+    'payment-service',
+    'notification-service',
+    'api-gateway',
+    'catalog-service',
+    'inventory-service',
+    'shipping-service',
+    'recommendation-service',
+    'review-service',
+    'search-service',
+    'frontend'
+]
+
+// Services with a package.json - these get npm install/test.
+// 'frontend' is a static site (no package.json), so it's excluded here.
+def npmServices = services - ['frontend']
 
 pipeline {
 
@@ -52,7 +83,7 @@ pipeline {
         booleanParam(
             name: 'CREATE_ECR_REPOS',
             defaultValue: false,
-            description: 'Auto-create ECR repository if it does not already exist'
+            description: 'Auto-create ECR repositories if they do not already exist'
         )
     }
 
@@ -145,22 +176,33 @@ pipeline {
 
 
         // ====================================================================
-        // Install dependencies
+        // Install Dependencies
         // ====================================================================
 
         stage('Install Dependencies') {
 
             steps {
 
-                echo '=============================='
-                echo 'Installing npm dependencies'
-                echo '=============================='
+                script {
 
-                sh '''
-                    node -v
-                    npm -v
-                    npm ci
-                '''
+                    npmServices.each { service ->
+
+                        echo """
+                        ============================================
+                        Installing dependencies: ${service}
+                        ============================================
+                        """
+
+                        dir(service) {
+
+                            sh '''
+                                node -v
+                                npm -v
+                                npm ci
+                            '''
+                        }
+                    }
+                }
             }
         }
 
@@ -173,19 +215,29 @@ pipeline {
 
             steps {
 
-                echo '=============================='
-                echo 'Running tests'
-                echo '=============================='
+                script {
 
-                /*
-                If package.json has no "test" script yet, this will fail.
-                Either add a test script, or temporarily replace the line
-                below with: sh 'echo "no tests configured yet"'
-                */
+                    npmServices.each { service ->
 
-                sh '''
-                    npm test
-                '''
+                        echo """
+                        ============================================
+                        Running tests: ${service}
+                        ============================================
+                        """
+
+                        dir(service) {
+
+                            /*
+                            --if-present avoids failing services that
+                            don't have a "test" script defined yet.
+                            */
+
+                            sh '''
+                                npm test --if-present
+                            '''
+                        }
+                    }
+                }
             }
         }
 
@@ -198,38 +250,39 @@ pipeline {
 
             steps {
 
-                echo '=============================='
-                echo 'Trivy source scan'
-                echo '=============================='
+                script {
 
-                /*
-                Generate JSON report
-                */
+                    services.each { service ->
 
-                sh """
-                    trivy fs \
-                    --scanners vuln,secret,misconfig \
-                    --severity HIGH,CRITICAL \
-                    --skip-dirs node_modules \
-                    --format json \
-                    --output trivy-fs-report.json \
-                    .
-                """
+                        echo """
+                        ============================================
+                        Trivy Source Scan: ${service}
+                        ============================================
+                        """
 
-                /*
-                Fail pipeline for HIGH / CRITICAL vulnerabilities.
-                Remove/comment this block if you want scans to be
-                report-only while you're still stabilizing the pipeline.
-                */
+                        dir(service) {
 
-                sh """
-                    trivy fs \
-                    --scanners vuln,secret,misconfig \
-                    --severity HIGH,CRITICAL \
-                    --skip-dirs node_modules \
-                    --exit-code 1 \
-                    .
-                """
+                            sh """
+                                trivy fs \
+                                --scanners vuln,secret,misconfig \
+                                --severity HIGH,CRITICAL \
+                                --skip-dirs node_modules \
+                                --format json \
+                                --output trivy-fs-report.json \
+                                .
+                            """
+
+                            sh """
+                                trivy fs \
+                                --scanners vuln,secret,misconfig \
+                                --severity HIGH,CRITICAL \
+                                --skip-dirs node_modules \
+                                --exit-code 1 \
+                                .
+                            """
+                        }
+                    }
+                }
             }
 
             post {
@@ -237,7 +290,7 @@ pipeline {
                 always {
 
                     archiveArtifacts(
-                        artifacts: 'trivy-fs-report.json',
+                        artifacts: '**/trivy-fs-report.json',
                         allowEmptyArchive: true
                     )
                 }
@@ -255,22 +308,26 @@ pipeline {
 
                 script {
 
-                    env.IMAGE = "${REGISTRY}/${APP_NAME}:${IMAGE_TAG}"
+                    services.each { service ->
 
-                    echo """
-                    ============================================
-                    Building Docker Image
+                        def image =
+                            "${REGISTRY}/${service}:${IMAGE_TAG}"
 
-                    ${env.IMAGE}
-                    ============================================
-                    """
+                        echo """
+                        ============================================
+                        Building Docker Image
 
-                    sh """
-                        docker build \
-                        --pull \
-                        -t ${env.IMAGE} \
-                        .
-                    """
+                        ${image}
+                        ============================================
+                        """
+
+                        sh """
+                            docker build \
+                            --pull \
+                            -t ${image} \
+                            ./${service}
+                        """
+                    }
                 }
             }
         }
@@ -284,28 +341,37 @@ pipeline {
 
             steps {
 
-                echo """
-                ============================================
-                Trivy Docker Image Scan
+                script {
 
-                ${env.IMAGE}
-                ============================================
-                """
+                    services.each { service ->
 
-                sh """
-                    trivy image \
-                    --severity HIGH,CRITICAL \
-                    --format json \
-                    --output trivy-image-report.json \
-                    ${env.IMAGE}
-                """
+                        def image =
+                            "${REGISTRY}/${service}:${IMAGE_TAG}"
 
-                sh """
-                    trivy image \
-                    --severity HIGH,CRITICAL \
-                    --exit-code 1 \
-                    ${env.IMAGE}
-                """
+                        echo """
+                        ============================================
+                        Trivy Docker Image Scan
+
+                        ${image}
+                        ============================================
+                        """
+
+                        sh """
+                            trivy image \
+                            --severity HIGH,CRITICAL \
+                            --format json \
+                            --output trivy-${service}-image.json \
+                            ${image}
+                        """
+
+                        sh """
+                            trivy image \
+                            --severity HIGH,CRITICAL \
+                            --exit-code 1 \
+                            ${image}
+                        """
+                    }
+                }
             }
 
             post {
@@ -313,7 +379,7 @@ pipeline {
                 always {
 
                     archiveArtifacts(
-                        artifacts: 'trivy-image-report.json',
+                        artifacts: 'trivy-*-image.json',
                         allowEmptyArchive: true
                     )
                 }
@@ -350,10 +416,10 @@ pipeline {
 
 
         // ====================================================================
-        // Ensure ECR Repository Exists
+        // Ensure ECR Repositories Exist
         // ====================================================================
 
-        stage('Ensure ECR Repository') {
+        stage('Ensure ECR Repositories') {
 
             when {
 
@@ -372,39 +438,60 @@ pipeline {
                     )
                 ]) {
 
-                    sh """
-                        aws ecr describe-repositories \
-                            --region ${AWS_REGION} \
-                            --repository-names ${APP_NAME} \
-                        || aws ecr create-repository \
-                            --region ${AWS_REGION} \
-                            --repository-name ${APP_NAME} \
-                            --image-scanning-configuration scanOnPush=true
-                    """
+                    script {
+
+                        services.each { service ->
+
+                            echo """
+                            ============================================
+                            Checking ECR repository: ${service}
+                            ============================================
+                            """
+
+                            sh """
+                                aws ecr describe-repositories \
+                                    --region ${AWS_REGION} \
+                                    --repository-names ${service} \
+                                || aws ecr create-repository \
+                                    --region ${AWS_REGION} \
+                                    --repository-name ${service} \
+                                    --image-scanning-configuration scanOnPush=true
+                            """
+                        }
+                    }
                 }
             }
         }
 
 
         // ====================================================================
-        // Push Docker Image
+        // Push Docker Images
         // ====================================================================
 
-        stage('Push Docker Image') {
+        stage('Push Docker Images') {
 
             steps {
 
-                echo """
-                ============================================
-                Pushing Docker Image
+                script {
 
-                ${env.IMAGE}
-                ============================================
-                """
+                    services.each { service ->
 
-                sh """
-                    docker push ${env.IMAGE}
-                """
+                        def image =
+                            "${REGISTRY}/${service}:${IMAGE_TAG}"
+
+                        echo """
+                        ============================================
+                        Pushing Docker Image
+
+                        ${image}
+                        ============================================
+                        """
+
+                        sh """
+                            docker push ${image}
+                        """
+                    }
+                }
             }
         }
 
@@ -430,18 +517,27 @@ pipeline {
             steps {
 
                 sh '''
-                    aws eks update-kubeconfig \
+                aws eks update-kubeconfig \
                     --region "${AWS_REGION}" \
                     --name "${EKS_CLUSTER_NAME}"
                 '''
 
-                sh """
-                    kubectl \
-                    -n ${K8S_NAMESPACE} \
-                    set image \
-                    deployment/${APP_NAME} \
-                    ${APP_NAME}=${env.IMAGE}
-                """
+                script {
+
+                    services.each { service ->
+
+                        def image =
+                            "${REGISTRY}/${service}:${IMAGE_TAG}"
+
+                        sh """
+                            kubectl \
+                            -n ${K8S_NAMESPACE} \
+                            set image \
+                            deployment/${service} \
+                            ${service}=${image}
+                        """
+                    }
+                }
             }
         }
 
@@ -472,13 +568,21 @@ pipeline {
                     --name "${EKS_CLUSTER_NAME}"
                 '''
 
-                sh """
-                    kubectl \
-                    -n ${K8S_NAMESPACE} \
-                    rollout status \
-                    deployment/${APP_NAME} \
-                    --timeout=300s
-                """
+                script {
+
+                    services.each { service ->
+
+                        echo "Checking rollout: ${service}"
+
+                        sh """
+                            kubectl \
+                            -n ${K8S_NAMESPACE} \
+                            rollout status \
+                            deployment/${service} \
+                            --timeout=300s
+                        """
+                    }
+                }
             }
         }
     }
@@ -516,9 +620,17 @@ pipeline {
                 docker logout "${REGISTRY}" || true
             '''
 
-            sh """
-                docker image rm ${env.IMAGE} 2>/dev/null || true
-            """
+            script {
+
+                services.each { service ->
+
+                    sh """
+                        docker image rm \
+                        ${REGISTRY}/${service}:${IMAGE_TAG} \
+                        2>/dev/null || true
+                    """
+                }
+            }
         }
     }
 }
