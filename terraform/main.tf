@@ -53,5 +53,5 @@ module "eks" {
   min_nodes     = var.min_nodes
   max_nodes     = var.max_nodes
 
-  admin_principal_arn = var.admin_principal_arn
+  admin_principal_arn = var.admin_principal_arns
 }

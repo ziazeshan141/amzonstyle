@@ -41,18 +41,18 @@ resource "aws_eks_cluster" "main" {
 # -----------------------------
 
 resource "aws_eks_access_entry" "admin" {
-  cluster_name  = aws_eks_cluster.main.name
-  principal_arn = var.admin_principal_arn
-  type          = "STANDARD"
+  for_each = var.admin_principal_arns
 
-  depends_on = [
-    aws_eks_cluster.main
-  ]
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = each.value
+  type          = "STANDARD"
 }
 
 resource "aws_eks_access_policy_association" "admin" {
+  for_each = var.admin_principal_arns
+
   cluster_name  = aws_eks_cluster.main.name
-  principal_arn = var.admin_principal_arn
+  principal_arn = each.value
 
   policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 

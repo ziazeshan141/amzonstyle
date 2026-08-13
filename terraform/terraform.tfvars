@@ -22,7 +22,10 @@ min_nodes = 2
 
 max_nodes = 5
 
-admin_principal_arn = "arn:aws:iam::047385030300:user/Zeshan"
+admin_principal_arns = [
+  "arn:aws:iam::047385030300:user/Zeshan",
+  "arn:aws:iam::047385030300:user/terraform"
+]
 
 ecr_repositories = [
   "auth-service",

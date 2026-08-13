@@ -53,7 +53,7 @@ variable "ecr_repositories" {
   type        = list(string)
 }
 
-variable "admin_principal_arn" {
+variable "admin_principal_arns" {
   description = "IAM principal allowed to administer the EKS cluster"
   type        = string
 }
