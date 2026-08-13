@@ -46,6 +46,10 @@ resource "aws_eks_access_entry" "admin" {
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = each.value
   type          = "STANDARD"
+
+  depends_on = [
+    aws_eks_cluster.main
+  ]
 }
 
 resource "aws_eks_access_policy_association" "admin" {
