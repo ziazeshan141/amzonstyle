@@ -1,42 +1,28 @@
 /*
 ===============================================================================
- MICROservices CI/CD Pipeline
+ amzonstyle CI/CD Pipeline (single Node.js app)
 ===============================================================================
 
  Pipeline:
    1. Checkout
-   2. Build
+   2. Install & Build
    3. Unit Test
-   4. SonarQube Analysis
-   5. SonarQube Quality Gate
-   6. OWASP Dependency Check
-   7. Trivy Source Scan
-   8. Docker Build
-   9. Trivy Docker Image Scan
-  10. Docker Push (AWS ECR)
-  11. Kubernetes Deployment
-  12. Verify Deployment
+   4. Trivy Source Scan
+   5. Docker Build
+   6. Trivy Docker Image Scan
+   7. Docker Push (AWS ECR)
+   8. Kubernetes Deployment
+   9. Verify Deployment
+
+ NOTE: SonarQube and OWASP Dependency Check were removed for now since
+ they were configured for Maven/Java. Re-add later with sonar-scanner
+ CLI and the OWASP dependency-check CLI (pointed at package-lock.json)
+ if/when you want them back.
 
 ===============================================================================
 */
 
-def services = [
-    'auth-service',
-    'user-service',
-    'product-service',
-    'cart-service',
-    'order-service',
-    'payment-service',
-    'notification-service',
-    'api-gateway',
-    'frontend',
-    'catalog-service',
-    'inventory-service',
-    'shipping-service',
-    'recommendation-service',
-    'review-service',
-    'search-service'
-]
+def APP_NAME = 'amzonstyle'
 
 pipeline {
 
@@ -66,16 +52,14 @@ pipeline {
         booleanParam(
             name: 'CREATE_ECR_REPOS',
             defaultValue: false,
-            description: 'Auto-create ECR repositories if they do not already exist'
+            description: 'Auto-create ECR repository if it does not already exist'
         )
     }
 
     tools {
-        // Configure these names under:
-        // Manage Jenkins -> Tools
-
-        jdk 'JDK21'
-        maven 'Maven3'
+        // Configure this under: Manage Jenkins -> Tools -> NodeJS installations
+        // (requires the "NodeJS" plugin)
+        nodejs 'Node20'
     }
 
     environment {
@@ -84,12 +68,6 @@ pipeline {
         -----------------------------------------------------------------------
         AWS / ECR Registry
         -----------------------------------------------------------------------
-        Registry host format:
-            <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com
-
-        Fill in your AWS account ID and region below, or move these
-        into Jenkins credentials / global properties if you'd rather
-        not hardcode them.
         */
 
         AWS_ACCOUNT_ID = '047385030300'
@@ -104,10 +82,6 @@ pipeline {
         -----------------------------------------------------------------------
         GitHub repository
         -----------------------------------------------------------------------
-        Fill in your repo URL / branch below. GITHUB_CREDENTIALS should point
-        to a Jenkins credential of kind "Username with password" (use a
-        GitHub Personal Access Token as the password) for HTTPS checkout,
-        or "SSH Username with private key" if GIT_REPO_URL uses git@ / ssh://.
         */
 
         GIT_REPO_URL = 'https://github.com/ziazeshan141/amzonstyle.git'
@@ -120,43 +94,13 @@ pipeline {
         Jenkins Credentials IDs
         */
 
-        // AWS credentials (Access Key / Secret Key) stored as an
-        // "AWS Credentials" or "Username/Password" credential in Jenkins.
-        //
-        // NOTE: if your Jenkins agent already runs on an EC2 instance /
-        // EKS pod with an IAM instance role or IRSA that has ECR
-        // permissions, you can remove this and the withCredentials
-        // block in "Docker Login" entirely - the AWS CLI will pick up
-        // credentials automatically.
         AWS_CREDENTIALS = 'aws-ecr-credentials'
-
-        KUBECONFIG_CREDENTIALS = 'kubeconfig'
-
-        NVD_API_KEY_CREDENTIALS = 'nvd-api-key'
-
-        /*
-        SonarQube server name configured under:
-
-        Manage Jenkins
-        -> System
-        -> SonarQube servers
-        */
-
-        SONAR_SERVER = 'SonarQube'
 
         /*
         Kubernetes
         */
 
         K8S_NAMESPACE = 'microservices'
-
-        /*
-        OWASP Dependency Check
-
-        Fail build if CVSS >= 7
-        */
-
-        OWASP_CVSS_THRESHOLD = '7'
     }
 
 
@@ -173,16 +117,6 @@ pipeline {
                 echo '=============================='
                 echo 'Checking out source code'
                 echo '=============================='
-
-                /*
-                Explicit checkout using GitHub credentials.
-
-                NOTE: if this job is a Multibranch Pipeline or a Pipeline
-                already wired to an SCM source in the Jenkins UI, you can
-                use `checkout scm` instead (it inherits the branch/repo/
-                credentials configured on the job) and drop GIT_REPO_URL /
-                GIT_BRANCH / GITHUB_CREDENTIALS above.
-                */
 
                 checkout([
                     $class: 'GitSCM',
@@ -211,34 +145,22 @@ pipeline {
 
 
         // ====================================================================
-        // Build
+        // Install dependencies
         // ====================================================================
 
-        stage('Build Microservices') {
+        stage('Install Dependencies') {
 
             steps {
 
-                script {
+                echo '=============================='
+                echo 'Installing npm dependencies'
+                echo '=============================='
 
-                    services.each { service ->
-
-                        echo """
-                        ============================================
-                        Building ${service}
-                        ============================================
-                        """
-
-                        dir(service) {
-
-                            sh '''
-                                mvn -B \
-                                    clean \
-                                    package \
-                                    -DskipTests
-                            '''
-                        }
-                    }
-                }
+                sh '''
+                    node -v
+                    npm -v
+                    npm ci
+                '''
             }
         }
 
@@ -251,143 +173,19 @@ pipeline {
 
             steps {
 
-                script {
+                echo '=============================='
+                echo 'Running tests'
+                echo '=============================='
 
-                    services.each { service ->
+                /*
+                If package.json has no "test" script yet, this will fail.
+                Either add a test script, or temporarily replace the line
+                below with: sh 'echo "no tests configured yet"'
+                */
 
-                        echo """
-                        ============================================
-                        Running tests: ${service}
-                        ============================================
-                        """
-
-                        dir(service) {
-
-                            sh '''
-                                mvn -B test
-                            '''
-                        }
-                    }
-                }
-            }
-
-            post {
-
-                always {
-
-                    junit(
-                        testResults: '**/target/surefire-reports/*.xml',
-                        allowEmptyResults: true
-                    )
-                }
-            }
-        }
-
-
-        // ====================================================================
-        // SonarQube
-        // ====================================================================
-
-        stage('SonarQube Analysis') {
-
-            steps {
-
-                script {
-
-                    services.each { service ->
-
-                        echo """
-                        ============================================
-                        SonarQube Scan: ${service}
-                        ============================================
-                        """
-
-                        dir(service) {
-
-                            withSonarQubeEnv("${SONAR_SERVER}") {
-
-                                sh """
-                                    mvn -B sonar:sonar \
-                                    -Dsonar.projectKey=${service} \
-                                    -Dsonar.projectName=${service}
-                                """
-                            }
-                        }
-
-
-                        /*
-                        -------------------------------------------------------
-                        IMPORTANT
-
-                        Wait for the quality gate before analyzing/deploying
-                        the next component.
-                        -------------------------------------------------------
-                        */
-
-                        timeout(
-                            time: 10,
-                            unit: 'MINUTES'
-                        ) {
-
-                            waitForQualityGate(
-                                abortPipeline: true
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-
-        // ====================================================================
-        // OWASP Dependency Check
-        // ====================================================================
-
-        stage('OWASP Dependency Check') {
-
-            steps {
-
-                withCredentials([
-                    string(
-                        credentialsId: "${NVD_API_KEY_CREDENTIALS}",
-                        variable: 'NVD_API_KEY'
-                    )
-                ]) {
-
-                    script {
-
-                        services.each { service ->
-
-                            echo """
-                            ============================================
-                            OWASP Dependency Check: ${service}
-                            ============================================
-                            """
-
-                            dir(service) {
-
-                                sh """
-                                    mvn -B \
-                                    org.owasp:dependency-check-maven:13.0.0:check \
-                                    -DfailBuildOnCVSS=${OWASP_CVSS_THRESHOLD} \
-                                    -Dformats=HTML,JSON \
-                                    -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
-                                """
-                            }
-                        }
-                    }
-                }
-            }
-
-            post {
-
-                always {
-
-                    archiveArtifacts(
-                        artifacts: '**/target/dependency-check-report.*',
-                        allowEmptyArchive: true
-                    )
-                }
+                sh '''
+                    npm test
+                '''
             }
         }
 
@@ -400,49 +198,38 @@ pipeline {
 
             steps {
 
-                script {
+                echo '=============================='
+                echo 'Trivy source scan'
+                echo '=============================='
 
-                    services.each { service ->
+                /*
+                Generate JSON report
+                */
 
-                        echo """
-                        ============================================
-                        Trivy Source Scan: ${service}
-                        ============================================
-                        """
+                sh """
+                    trivy fs \
+                    --scanners vuln,secret,misconfig \
+                    --severity HIGH,CRITICAL \
+                    --skip-dirs node_modules \
+                    --format json \
+                    --output trivy-fs-report.json \
+                    .
+                """
 
-                        dir(service) {
+                /*
+                Fail pipeline for HIGH / CRITICAL vulnerabilities.
+                Remove/comment this block if you want scans to be
+                report-only while you're still stabilizing the pipeline.
+                */
 
-                            /*
-                            Generate JSON report
-                            */
-
-                            sh """
-                                trivy fs \
-                                --scanners vuln,secret,misconfig \
-                                --severity HIGH,CRITICAL \
-                                --skip-dirs target \
-                                --format json \
-                                --output trivy-fs-report.json \
-                                .
-                            """
-
-
-                            /*
-                            Fail pipeline for HIGH / CRITICAL
-                            vulnerabilities.
-                            */
-
-                            sh """
-                                trivy fs \
-                                --scanners vuln,secret,misconfig \
-                                --severity HIGH,CRITICAL \
-                                --skip-dirs target \
-                                --exit-code 1 \
-                                .
-                            """
-                        }
-                    }
-                }
+                sh """
+                    trivy fs \
+                    --scanners vuln,secret,misconfig \
+                    --severity HIGH,CRITICAL \
+                    --skip-dirs node_modules \
+                    --exit-code 1 \
+                    .
+                """
             }
 
             post {
@@ -450,7 +237,7 @@ pipeline {
                 always {
 
                     archiveArtifacts(
-                        artifacts: '**/trivy-fs-report.json',
+                        artifacts: 'trivy-fs-report.json',
                         allowEmptyArchive: true
                     )
                 }
@@ -468,26 +255,22 @@ pipeline {
 
                 script {
 
-                    services.each { service ->
+                    env.IMAGE = "${REGISTRY}/${APP_NAME}:${IMAGE_TAG}"
 
-                        def image =
-                            "${REGISTRY}/${service}:${IMAGE_TAG}"
+                    echo """
+                    ============================================
+                    Building Docker Image
 
-                        echo """
-                        ============================================
-                        Building Docker Image
+                    ${env.IMAGE}
+                    ============================================
+                    """
 
-                        ${image}
-                        ============================================
-                        """
-
-                        sh """
-                            docker build \
-                            --pull \
-                            -t ${image} \
-                            ./${service}
-                        """
-                    }
+                    sh """
+                        docker build \
+                        --pull \
+                        -t ${env.IMAGE} \
+                        .
+                    """
                 }
             }
         }
@@ -501,47 +284,28 @@ pipeline {
 
             steps {
 
-                script {
+                echo """
+                ============================================
+                Trivy Docker Image Scan
 
-                    services.each { service ->
+                ${env.IMAGE}
+                ============================================
+                """
 
-                        def image =
-                            "${REGISTRY}/${service}:${IMAGE_TAG}"
+                sh """
+                    trivy image \
+                    --severity HIGH,CRITICAL \
+                    --format json \
+                    --output trivy-image-report.json \
+                    ${env.IMAGE}
+                """
 
-                        echo """
-                        ============================================
-                        Trivy Docker Image Scan
-
-                        ${image}
-                        ============================================
-                        """
-
-                        /*
-                        Generate report
-                        */
-
-                        sh """
-                            trivy image \
-                            --severity HIGH,CRITICAL \
-                            --format json \
-                            --output trivy-${service}-image.json \
-                            ${image}
-                        """
-
-
-                        /*
-                        Fail deployment if HIGH/CRITICAL
-                        vulnerability exists
-                        */
-
-                        sh """
-                            trivy image \
-                            --severity HIGH,CRITICAL \
-                            --exit-code 1 \
-                            ${image}
-                        """
-                    }
-                }
+                sh """
+                    trivy image \
+                    --severity HIGH,CRITICAL \
+                    --exit-code 1 \
+                    ${env.IMAGE}
+                """
             }
 
             post {
@@ -549,7 +313,7 @@ pipeline {
                 always {
 
                     archiveArtifacts(
-                        artifacts: 'trivy-*-image.json',
+                        artifacts: 'trivy-image-report.json',
                         allowEmptyArchive: true
                     )
                 }
@@ -564,14 +328,6 @@ pipeline {
         stage('Docker Login') {
 
             steps {
-
-                /*
-                If your Jenkins agent already has an IAM role / IRSA with
-                ECR permissions attached, you can drop the withCredentials
-                wrapper below and just run the `aws ecr get-login-password`
-                line directly - the AWS CLI will resolve credentials from
-                the instance/pod role automatically.
-                */
 
                 withCredentials([
                     usernamePassword(
@@ -594,10 +350,10 @@ pipeline {
 
 
         // ====================================================================
-        // Ensure ECR Repositories Exist
+        // Ensure ECR Repository Exists
         // ====================================================================
 
-        stage('Ensure ECR Repositories') {
+        stage('Ensure ECR Repository') {
 
             when {
 
@@ -616,60 +372,39 @@ pipeline {
                     )
                 ]) {
 
-                    script {
-
-                        services.each { service ->
-
-                            echo """
-                            ============================================
-                            Checking ECR repository: ${service}
-                            ============================================
-                            """
-
-                            sh """
-                                aws ecr describe-repositories \
-                                    --region ${AWS_REGION} \
-                                    --repository-names ${service} \
-                                || aws ecr create-repository \
-                                    --region ${AWS_REGION} \
-                                    --repository-name ${service} \
-                                    --image-scanning-configuration scanOnPush=true
-                            """
-                        }
-                    }
+                    sh """
+                        aws ecr describe-repositories \
+                            --region ${AWS_REGION} \
+                            --repository-names ${APP_NAME} \
+                        || aws ecr create-repository \
+                            --region ${AWS_REGION} \
+                            --repository-name ${APP_NAME} \
+                            --image-scanning-configuration scanOnPush=true
+                    """
                 }
             }
         }
 
 
         // ====================================================================
-        // Push Docker Images
+        // Push Docker Image
         // ====================================================================
 
-        stage('Push Docker Images') {
+        stage('Push Docker Image') {
 
             steps {
 
-                script {
+                echo """
+                ============================================
+                Pushing Docker Image
 
-                    services.each { service ->
+                ${env.IMAGE}
+                ============================================
+                """
 
-                        def image =
-                            "${REGISTRY}/${service}:${IMAGE_TAG}"
-
-                        echo """
-                        ============================================
-                        Pushing Docker Image
-
-                        ${image}
-                        ============================================
-                        """
-
-                        sh """
-                            docker push ${image}
-                        """
-                    }
-                }
+                sh """
+                    docker push ${env.IMAGE}
+                """
             }
         }
 
@@ -695,27 +430,18 @@ pipeline {
             steps {
 
                 sh '''
-                aws eks update-kubeconfig \
+                    aws eks update-kubeconfig \
                     --region "${AWS_REGION}" \
                     --name "${EKS_CLUSTER_NAME}"
                 '''
 
-                script {
-
-                    services.each { service ->
-
-                        def image =
-                            "${REGISTRY}/${service}:${IMAGE_TAG}"
-
-                        sh """
-                            kubectl \
-                            -n ${K8S_NAMESPACE} \
-                            set image \
-                            deployment/${service} \
-                            ${service}=${image}
-                        """
-                    }
-                }
+                sh """
+                    kubectl \
+                    -n ${K8S_NAMESPACE} \
+                    set image \
+                    deployment/${APP_NAME} \
+                    ${APP_NAME}=${env.IMAGE}
+                """
             }
         }
 
@@ -746,21 +472,13 @@ pipeline {
                     --name "${EKS_CLUSTER_NAME}"
                 '''
 
-                script {
-
-                    services.each { service ->
-
-                        echo "Checking rollout: ${service}"
-
-                        sh """
-                            kubectl \
-                            -n ${K8S_NAMESPACE} \
-                            rollout status \
-                            deployment/${service} \
-                            --timeout=300s
-                        """
-                    }
-                }
+                sh """
+                    kubectl \
+                    -n ${K8S_NAMESPACE} \
+                    rollout status \
+                    deployment/${APP_NAME} \
+                    --timeout=300s
+                """
             }
         }
     }
@@ -781,7 +499,6 @@ pipeline {
             '''
         }
 
-
         failure {
 
             echo '''
@@ -791,7 +508,6 @@ pipeline {
             '''
         }
 
-
         always {
 
             echo 'Build completed.'
@@ -800,17 +516,9 @@ pipeline {
                 docker logout "${REGISTRY}" || true
             '''
 
-            script {
-
-                services.each { service ->
-
-                    sh """
-                        docker image rm \
-                        ${REGISTRY}/${service}:${IMAGE_TAG} \
-                        2>/dev/null || true
-                    """
-                }
-            }
+            sh """
+                docker image rm ${env.IMAGE} 2>/dev/null || true
+            """
         }
     }
 }
