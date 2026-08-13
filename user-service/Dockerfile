@@ -12,5 +12,5 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
 
 USER appuser
 
-EXPOSE <whatever port this service uses>
+EXPOSE 3002
 CMD ["npm", "start"]
