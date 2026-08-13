@@ -1,0 +1,132 @@
+services:
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      JWT_SECRET: change-me-in-real-use
+    networks: [amazon-net]
+  user-service:
+    build: ./user-service
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+    networks: [amazon-net]
+  product-service:
+    build: ./product-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+    networks: [amazon-net]
+  catalog-service:
+    build: ./catalog-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      PRODUCT_SERVICE_URL: http://product-service:3003
+    networks: [amazon-net]
+  search-service:
+    build: ./search-service
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
+      PRODUCT_SERVICE_URL: http://product-service:3003
+    networks: [amazon-net]
+  cart-service:
+    build: ./cart-service
+    ports:
+      - "3006:3006"
+    environment:
+      PORT: 3006
+      PRODUCT_SERVICE_URL: http://product-service:3003
+    networks: [amazon-net]
+  order-service:
+    build: ./order-service
+    ports:
+      - "3007:3007"
+    environment:
+      PORT: 3007
+      CART_SERVICE_URL: http://cart-service:3006
+      INVENTORY_SERVICE_URL: http://inventory-service:3009
+      PAYMENT_SERVICE_URL: http://payment-service:3008
+      SHIPPING_SERVICE_URL: http://shipping-service:3010
+      NOTIFICATION_SERVICE_URL: http://notification-service:3013
+    networks: [amazon-net]
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "3008:3008"
+    environment:
+      PORT: 3008
+    networks: [amazon-net]
+  inventory-service:
+    build: ./inventory-service
+    ports:
+      - "3009:3009"
+    environment:
+      PORT: 3009
+    networks: [amazon-net]
+  shipping-service:
+    build: ./shipping-service
+    ports:
+      - "3010:3010"
+    environment:
+      PORT: 3010
+    networks: [amazon-net]
+  review-service:
+    build: ./review-service
+    ports:
+      - "3011:3011"
+    environment:
+      PORT: 3011
+    networks: [amazon-net]
+  recommendation-service:
+    build: ./recommendation-service
+    ports:
+      - "3012:3012"
+    environment:
+      PORT: 3012
+      PRODUCT_SERVICE_URL: http://product-service:3003
+    networks: [amazon-net]
+  notification-service:
+    build: ./notification-service
+    ports:
+      - "3013:3013"
+    environment:
+      PORT: 3013
+    networks: [amazon-net]
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      AUTH_SERVICE_URL: http://auth-service:3001
+      USER_SERVICE_URL: http://user-service:3002
+      PRODUCT_SERVICE_URL: http://product-service:3003
+      CATALOG_SERVICE_URL: http://catalog-service:3004
+      SEARCH_SERVICE_URL: http://search-service:3005
+      CART_SERVICE_URL: http://cart-service:3006
+      ORDER_SERVICE_URL: http://order-service:3007
+      PAYMENT_SERVICE_URL: http://payment-service:3008
+      INVENTORY_SERVICE_URL: http://inventory-service:3009
+      SHIPPING_SERVICE_URL: http://shipping-service:3010
+      REVIEW_SERVICE_URL: http://review-service:3011
+      RECOMMENDATION_SERVICE_URL: http://recommendation-service:3012
+      NOTIFICATION_SERVICE_URL: http://notification-service:3013
+    networks: [amazon-net]
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
+    networks: [amazon-net]
+networks:
+  amazon-net:
+    driver: bridge
