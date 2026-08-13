@@ -51,6 +51,6 @@ variable "max_nodes" {
 }
 
 variable "admin_principal_arn" {
-  description = "IAM principal that will administer the EKS cluster"
+  description = "IAM principal allowed to administer the EKS cluster"
   type        = string
 }

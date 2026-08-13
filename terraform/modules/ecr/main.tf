@@ -1,8 +1,7 @@
-resource "aws_ecr_repository" "services" {
+resource "aws_ecr_repository" "this" {
   for_each = toset(var.repositories)
 
-  name = each.value
-
+  name                 = each.value
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -13,13 +12,15 @@ resource "aws_ecr_repository" "services" {
     encryption_type = "AES256"
   }
 
+  force_delete = false
+
   tags = {
     Name = each.value
   }
 }
 
-resource "aws_ecr_lifecycle_policy" "services" {
-  for_each = aws_ecr_repository.services
+resource "aws_ecr_lifecycle_policy" "this" {
+  for_each = aws_ecr_repository.this
 
   repository = each.value.name
 
@@ -27,15 +28,26 @@ resource "aws_ecr_lifecycle_policy" "services" {
     rules = [
       {
         rulePriority = 1
-
-        description = "Keep last 20 images"
-
+        description  = "Keep the last 20 tagged images"
         selection = {
-          tagStatus   = "any"
-          countType   = "imageCountMoreThan"
-          countNumber = 20
+          tagStatus     = "tagged"
+          tagPrefixList = ["v", "release", "prod", "dev"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 20
         }
-
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 2
+        description  = "Remove untagged images older than 7 days"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 7
+        }
         action = {
           type = "expire"
         }

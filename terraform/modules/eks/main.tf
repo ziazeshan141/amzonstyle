@@ -1,8 +1,11 @@
+# -----------------------------
+# EKS Cluster
+# -----------------------------
+
 resource "aws_eks_cluster" "main" {
   name = "${var.project_name}-${var.environment}-eks"
 
-  version = var.cluster_version
-
+  version  = var.cluster_version
   role_arn = var.cluster_role_arn
 
   access_config {
@@ -33,14 +36,54 @@ resource "aws_eks_cluster" "main" {
   }
 }
 
+# -----------------------------
+# EKS Admin Access
+# -----------------------------
+
+resource "aws_eks_access_entry" "admin" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = var.admin_principal_arn
+  type          = "STANDARD"
+
+  depends_on = [
+    aws_eks_cluster.main
+  ]
+}
+
+resource "aws_eks_access_policy_association" "admin" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = var.admin_principal_arn
+
+  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [
+    aws_eks_access_entry.admin
+  ]
+}
+
+# -----------------------------
+# Pod Identity Agent
+# -----------------------------
+
 resource "aws_eks_addon" "pod_identity" {
   cluster_name = aws_eks_cluster.main.name
-
-  addon_name = "eks-pod-identity-agent"
+  addon_name   = "eks-pod-identity-agent"
 
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [
+    aws_eks_cluster.main
+  ]
 }
+
+# -----------------------------
+# Managed Node Group
+# -----------------------------
 
 resource "aws_eks_node_group" "main" {
   cluster_name = aws_eks_cluster.main.name
@@ -61,10 +104,8 @@ resource "aws_eks_node_group" "main" {
 
   scaling_config {
     desired_size = var.desired_nodes
-
-    min_size = var.min_nodes
-
-    max_size = var.max_nodes
+    min_size     = var.min_nodes
+    max_size     = var.max_nodes
   }
 
   update_config {
@@ -81,7 +122,8 @@ resource "aws_eks_node_group" "main" {
   }
 
   depends_on = [
-    aws_eks_cluster.main
+    aws_eks_cluster.main,
+    aws_eks_addon.pod_identity
   ]
 }
 
@@ -91,8 +133,7 @@ resource "aws_eks_node_group" "main" {
 
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name = aws_eks_cluster.main.name
-
-  addon_name = "vpc-cni"
+  addon_name   = "vpc-cni"
 
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
@@ -108,8 +149,7 @@ resource "aws_eks_addon" "vpc_cni" {
 
 resource "aws_eks_addon" "coredns" {
   cluster_name = aws_eks_cluster.main.name
-
-  addon_name = "coredns"
+  addon_name   = "coredns"
 
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
@@ -125,8 +165,7 @@ resource "aws_eks_addon" "coredns" {
 
 resource "aws_eks_addon" "kube_proxy" {
   cluster_name = aws_eks_cluster.main.name
-
-  addon_name = "kube-proxy"
+  addon_name   = "kube-proxy"
 
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
@@ -136,10 +175,13 @@ resource "aws_eks_addon" "kube_proxy" {
   ]
 }
 
+# -----------------------------
+# EBS CSI Driver
+# -----------------------------
+
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name = aws_eks_cluster.main.name
-
-  addon_name = "aws-ebs-csi-driver"
+  addon_name   = "aws-ebs-csi-driver"
 
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
@@ -156,42 +198,9 @@ resource "aws_eks_pod_identity_association" "ebs_csi" {
   role_arn = var.ebs_csi_role_arn
 
   service_account = "ebs-csi-controller-sa"
-
-  namespace = "kube-system"
+  namespace       = "kube-system"
 
   depends_on = [
     aws_eks_addon.pod_identity
-  ]
-}
-
-# -----------------------------
-# EKS Cluster Admin Access
-# -----------------------------
-
-resource "aws_eks_access_entry" "admin" {
-  cluster_name = aws_eks_cluster.main.name
-
-  principal_arn = var.admin_principal_arn
-
-  type = "STANDARD"
-
-  depends_on = [
-    aws_eks_cluster.main
-  ]
-}
-
-resource "aws_eks_access_policy_association" "admin" {
-  cluster_name = aws_eks_cluster.main.name
-
-  principal_arn = var.admin_principal_arn
-
-  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-
-  access_scope {
-    type = "cluster"
-  }
-
-  depends_on = [
-    aws_eks_access_entry.admin
   ]
 }

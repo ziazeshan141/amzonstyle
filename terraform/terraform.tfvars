@@ -1,4 +1,4 @@
-aws_region  = "us-east-1"
+aws_region = "us-east-1"
 
 project_name = "microservices"
 
@@ -21,6 +21,8 @@ desired_nodes = 3
 min_nodes = 2
 
 max_nodes = 5
+
+admin_principal_arn = "arn:aws:iam::047385030300:user/Zeshan"
 
 ecr_repositories = [
   "auth-service",

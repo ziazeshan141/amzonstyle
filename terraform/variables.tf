@@ -29,27 +29,31 @@ variable "eks_cluster_version" {
 }
 
 variable "node_instance_type" {
-  description = "EC2 instance type for EKS nodes"
+  description = "EKS managed node instance type"
   type        = string
 }
 
 variable "desired_nodes" {
-  description = "Desired worker nodes"
+  description = "Desired number of nodes"
   type        = number
 }
 
 variable "min_nodes" {
-  description = "Minimum worker nodes"
+  description = "Minimum number of nodes"
   type        = number
 }
 
 variable "max_nodes" {
-  description = "Maximum worker nodes"
+  description = "Maximum number of nodes"
   type        = number
 }
 
 variable "ecr_repositories" {
-  description = "ECR repositories"
+  description = "ECR repository names"
   type        = list(string)
 }
 
+variable "admin_principal_arn" {
+  description = "IAM principal allowed to administer the EKS cluster"
+  type        = string
+}

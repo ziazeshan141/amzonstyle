@@ -1,107 +1,63 @@
-# -----------------------------
-# EKS Cluster Security Group
-# -----------------------------
-
-resource "aws_security_group" "cluster" {
-  name = "${var.project_name}-${var.environment}-eks-cluster-sg"
-
-  description = "Security group for EKS control plane"
-
-  vpc_id = var.vpc_id
-
-  ingress {
-    description = "HTTPS from VPC"
-
-    protocol = "tcp"
-
-    from_port = 443
-    to_port   = 443
-
-    cidr_blocks = [
-      var.vpc_cidr
-    ]
-  }
-
-  egress {
-    description = "Allow outbound traffic"
-
-    protocol = "-1"
-
-    from_port = 0
-    to_port   = 0
-
-    cidr_blocks = [
-      "0.0.0.0/0"
-    ]
-  }
+resource "aws_security_group" "eks_cluster" {
+  name        = "${var.project_name}-${var.environment}-eks-cluster-sg"
+  description = "Security group for the EKS control plane"
+  vpc_id      = var.vpc_id
 
   tags = {
     Name = "${var.project_name}-${var.environment}-eks-cluster-sg"
   }
 }
 
-# -----------------------------
-# EKS Node Security Group
-# -----------------------------
-
-resource "aws_security_group" "nodes" {
-  name = "${var.project_name}-${var.environment}-eks-node-sg"
-
+resource "aws_security_group" "eks_nodes" {
+  name        = "${var.project_name}-${var.environment}-eks-nodes-sg"
   description = "Security group for EKS worker nodes"
-
-  vpc_id = var.vpc_id
-
-  ingress {
-    description = "Node to node communication"
-
-    protocol = "-1"
-
-    from_port = 0
-    to_port   = 0
-
-    self = true
-  }
-
-  ingress {
-    description = "Cluster to worker nodes"
-
-    protocol = "tcp"
-
-    from_port = 1025
-    to_port   = 65535
-
-    cidr_blocks = [
-      var.vpc_cidr
-    ]
-  }
-
-  ingress {
-    description = "Kubernetes API"
-
-    protocol = "tcp"
-
-    from_port = 443
-    to_port   = 443
-
-    cidr_blocks = [
-      var.vpc_cidr
-    ]
-  }
-
-  egress {
-    description = "Allow outbound traffic"
-
-    protocol = "-1"
-
-    from_port = 0
-    to_port   = 0
-
-    cidr_blocks = [
-      "0.0.0.0/0"
-    ]
-  }
+  vpc_id      = var.vpc_id
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-eks-node-sg"
+    Name = "${var.project_name}-${var.environment}-eks-nodes-sg"
   }
+}
+
+# Cluster API access from worker nodes
+resource "aws_vpc_security_group_ingress_rule" "cluster_from_nodes" {
+  security_group_id            = aws_security_group.eks_cluster.id
+  referenced_security_group_id = aws_security_group.eks_nodes.id
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+  description                  = "Allow EKS nodes to reach the Kubernetes API"
+}
+
+# Node kubelet/API traffic from the cluster control plane
+resource "aws_vpc_security_group_ingress_rule" "nodes_from_cluster" {
+  security_group_id            = aws_security_group.eks_nodes.id
+  referenced_security_group_id = aws_security_group.eks_cluster.id
+  ip_protocol                  = "tcp"
+  from_port                    = 1025
+  to_port                      = 65535
+  description                  = "Allow control plane to reach worker node ports"
+}
+
+# Node-to-node communication
+resource "aws_vpc_security_group_ingress_rule" "nodes_from_nodes" {
+  security_group_id            = aws_security_group.eks_nodes.id
+  referenced_security_group_id = aws_security_group.eks_nodes.id
+  ip_protocol                  = "-1"
+  description                  = "Allow worker nodes to communicate with each other"
+}
+
+# Cluster egress
+resource "aws_vpc_security_group_egress_rule" "cluster_all" {
+  security_group_id = aws_security_group.eks_cluster.id
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Allow EKS control plane outbound traffic"
+}
+
+# Node egress
+resource "aws_vpc_security_group_egress_rule" "nodes_all" {
+  security_group_id = aws_security_group.eks_nodes.id
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Allow EKS nodes outbound traffic"
 }
