@@ -1,4 +1,4 @@
-aws_region  = "ap-south-1"
+aws_region  = "us-east-1"
 
 project_name = "microservices"
 
@@ -7,12 +7,12 @@ environment = "dev"
 vpc_cidr = "10.0.0.0/16"
 
 availability_zones = [
-  "ap-south-1a",
-  "ap-south-1b",
-  "ap-south-1c"
+  "us-east-1a",
+  "us-east-1b",
+  "us-east-1c"
 ]
 
-eks_cluster_version = "1.33"
+eks_cluster_version = "1.35"
 
 node_instance_type = "t3.medium"
 
