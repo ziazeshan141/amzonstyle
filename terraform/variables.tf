@@ -55,5 +55,5 @@ variable "ecr_repositories" {
 
 variable "admin_principal_arns" {
   description = "IAM principal allowed to administer the EKS cluster"
-  type        = (set)string
+  type        = set(string)
 }
