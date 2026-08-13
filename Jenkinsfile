@@ -35,9 +35,7 @@ def services = [
     'shipping-service',
     'recommendation-service',
     'review-service',
-    'search-service',
-
-
+    'search-service'
 ]
 
 pipeline {
@@ -98,7 +96,25 @@ pipeline {
 
         AWS_REGION = 'us-east-1'
 
+        EKS_CLUSTER_NAME = 'microservices-dev-eks'
+
         REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+        /*
+        -----------------------------------------------------------------------
+        GitHub repository
+        -----------------------------------------------------------------------
+        Fill in your repo URL / branch below. GITHUB_CREDENTIALS should point
+        to a Jenkins credential of kind "Username with password" (use a
+        GitHub Personal Access Token as the password) for HTTPS checkout,
+        or "SSH Username with private key" if GIT_REPO_URL uses git@ / ssh://.
+        */
+
+        GIT_REPO_URL = 'https://github.com/ziazeshan141/amzonstyle.git'
+
+        GIT_BRANCH = 'main'
+
+        GITHUB_CREDENTIALS = 'github-credentials'
 
         /*
         Jenkins Credentials IDs
@@ -158,7 +174,24 @@ pipeline {
                 echo 'Checking out source code'
                 echo '=============================='
 
-                checkout scm
+                /*
+                Explicit checkout using GitHub credentials.
+
+                NOTE: if this job is a Multibranch Pipeline or a Pipeline
+                already wired to an SCM source in the Jenkins UI, you can
+                use `checkout scm` instead (it inherits the branch/repo/
+                credentials configured on the job) and drop GIT_REPO_URL /
+                GIT_BRANCH / GITHUB_CREDENTIALS above.
+                */
+
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "*/${GIT_BRANCH}"]],
+                    userRemoteConfigs: [[
+                        url: "${GIT_REPO_URL}",
+                        credentialsId: "${GITHUB_CREDENTIALS}"
+                    ]]
+                ])
 
                 script {
 
@@ -661,37 +694,26 @@ pipeline {
 
             steps {
 
-                withCredentials([
-                    file(
-                        credentialsId: "${KUBECONFIG_CREDENTIALS}",
-                        variable: 'KUBECONFIG'
-                    )
-                ]) {
+                sh '''
+                aws eks update-kubeconfig \
+                    --region "${AWS_REGION}" \
+                    --name "${EKS_CLUSTER_NAME}"
+                '''
 
-                    script {
+                script {
 
-                        services.each { service ->
+                    services.each { service ->
 
-                            def image =
-                                "${REGISTRY}/${service}:${IMAGE_TAG}"
+                        def image =
+                            "${REGISTRY}/${service}:${IMAGE_TAG}"
 
-                            echo """
-                            ============================================
-                            Deploying ${service}
-
-                            Image:
-                            ${image}
-                            ============================================
-                            """
-
-                            sh """
-                                kubectl \
-                                -n ${K8S_NAMESPACE} \
-                                set image \
-                                deployment/${service} \
-                                ${service}=${image}
-                            """
-                        }
+                        sh """
+                            kubectl \
+                            -n ${K8S_NAMESPACE} \
+                            set image \
+                            deployment/${service} \
+                            ${service}=${image}
+                        """
                     }
                 }
             }
@@ -718,31 +740,25 @@ pipeline {
 
             steps {
 
-                withCredentials([
-                    file(
-                        credentialsId: "${KUBECONFIG_CREDENTIALS}",
-                        variable: 'KUBECONFIG'
-                    )
-                ]) {
+                sh '''
+                    aws eks update-kubeconfig \
+                    --region "${AWS_REGION}" \
+                    --name "${EKS_CLUSTER_NAME}"
+                '''
 
-                    script {
+                script {
 
-                        services.each { service ->
+                    services.each { service ->
 
-                            echo """
-                            ============================================
-                            Checking rollout: ${service}
-                            ============================================
-                            """
+                        echo "Checking rollout: ${service}"
 
-                            sh """
-                                kubectl \
-                                -n ${K8S_NAMESPACE} \
-                                rollout status \
-                                deployment/${service} \
-                                --timeout=300s
-                            """
-                        }
+                        sh """
+                            kubectl \
+                            -n ${K8S_NAMESPACE} \
+                            rollout status \
+                            deployment/${service} \
+                            --timeout=300s
+                        """
                     }
                 }
             }
