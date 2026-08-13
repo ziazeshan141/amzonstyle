@@ -1,42 +1,62 @@
-data "aws_availability_zones" "available" { state = "available" }
-
 module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = ">= 5.0"
-  name = "${var.cluster_name}-vpc"
-  cidr = var.vpc_cidr
-  azs = slice(data.aws_availability_zones.available.names, 0, 2)
-  private_subnets = var.private_subnets
-  public_subnets  = var.public_subnets
-  enable_nat_gateway = true
-  single_nat_gateway = true
-  enable_dns_hostnames = true
-  public_subnet_tags = { "kubernetes.io/role/elb" = 1 }
-  private_subnet_tags = { "kubernetes.io/role/internal-elb" = 1 }
+  source = "./modules/vpc"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  vpc_cidr          = var.vpc_cidr
+  availability_zones = var.availability_zones
+}
+
+module "security_groups" {
+  source = "./modules/security-groups"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  vpc_id    = module.vpc.vpc_id
+  vpc_cidr  = module.vpc.vpc_cidr
+}
+
+module "iam" {
+  source = "./modules/iam"
+
+  project_name = var.project_name
+  environment  = var.environment
+}
+
+module "ecr" {
+  source = "./modules/ecr"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  repositories = var.ecr_repositories
 }
 
 module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "~> 21.0"
-  name = var.cluster_name
-  kubernetes_version = "1.31"
-  endpoint_public_access = true
-  vpc_id = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
-  eks_managed_node_groups = {
-    default = {
-      min_size = 2
-      max_size = 4
-      desired_size = 2
-      instance_types = var.instance_types
-    }
-  }
-}
+  source = "./modules/eks"
 
-resource "aws_ecr_repository" "services" {
-  for_each = toset([
-    "api-gateway","auth-service","user-service","product-service","catalog-service","search-service","cart-service","order-service","payment-service","inventory-service","shipping-service","review-service","recommendation-service","notification-service","frontend"
-  ])
-  name = "amazon-microservices/${each.key}"
-  image_scanning_configuration { scan_on_push = true }
+  project_name = var.project_name
+  environment  = var.environment
+
+  cluster_version = var.eks_cluster_version
+
+  private_subnet_ids = module.vpc.private_subnet_ids
+
+  cluster_security_group_id = module.security_groups.cluster_security_group_id
+
+  node_security_group_id = module.security_groups.node_security_group_id
+
+  cluster_role_arn = module.iam.cluster_role_arn
+
+  node_role_arn = module.iam.node_role_arn
+
+  ebs_csi_role_arn = module.iam.ebs_csi_role_arn
+
+  node_instance_type = var.node_instance_type
+
+  desired_nodes = var.desired_nodes
+  min_nodes     = var.min_nodes
+  max_nodes     = var.max_nodes
 }

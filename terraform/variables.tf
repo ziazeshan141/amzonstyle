@@ -1,29 +1,54 @@
 variable "aws_region" {
-  type    = string
-  default = "us-east-1"
+  description = "AWS region"
+  type        = string
 }
 
-variable "cluster_name" {
-  type    = string
-  default = "amazon-microservices-eks"
+variable "project_name" {
+  description = "Project name"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
 }
 
 variable "vpc_cidr" {
-  type    = string
-  default = "10.20.0.0/16"
+  description = "VPC CIDR"
+  type        = string
 }
 
-variable "private_subnets" {
-  type    = list(string)
-  default = ["10.20.1.0/24", "10.20.2.0/24"]
+variable "availability_zones" {
+  description = "Availability zones"
+  type        = list(string)
 }
 
-variable "public_subnets" {
-  type    = list(string)
-  default = ["10.20.101.0/24", "10.20.102.0/24"]
+variable "eks_cluster_version" {
+  description = "EKS Kubernetes version"
+  type        = string
 }
 
-variable "instance_types" {
-  type    = list(string)
-  default = ["t3.medium"]
+variable "node_instance_type" {
+  description = "EC2 instance type for EKS nodes"
+  type        = string
+}
+
+variable "desired_nodes" {
+  description = "Desired worker nodes"
+  type        = number
+}
+
+variable "min_nodes" {
+  description = "Minimum worker nodes"
+  type        = number
+}
+
+variable "max_nodes" {
+  description = "Maximum worker nodes"
+  type        = number
+}
+
+variable "ecr_repositories" {
+  description = "ECR repositories"
+  type        = list(string)
 }
