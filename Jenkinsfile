@@ -271,7 +271,13 @@ pipeline {
 
                     sh """
                         kubectl get namespace ${K8S_NAMESPACE} || kubectl create namespace ${K8S_NAMESPACE}
-                        kubectl apply -n ${K8S_NAMESPACE} -f kubernetes/
+
+                        for f in kubernetes/*.yaml kubernetes/*.yml kubernetes/*.json; do
+                            if [ -f "\$f" ]; then
+                                echo "Applying \$f"
+                                kubectl apply -n ${K8S_NAMESPACE} -f "\$f"
+                            fi
+                        done
                     """
 
                     script {
