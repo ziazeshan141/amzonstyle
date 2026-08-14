@@ -269,6 +269,11 @@ pipeline {
                             --name "${EKS_CLUSTER_NAME}"
                     '''
 
+                    sh """
+                        kubectl get namespace ${K8S_NAMESPACE} || kubectl create namespace ${K8S_NAMESPACE}
+                        kubectl apply -n ${K8S_NAMESPACE} -f kubernetes/
+                    """
+
                     script {
                         services.each { service ->
                             def image = "${REGISTRY}/${service}:${IMAGE_TAG}"
