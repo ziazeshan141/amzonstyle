@@ -126,7 +126,6 @@ pipeline {
                     services.each { service ->
                         echo "Trivy Source Scan: ${service}"
                         dir(service) {
-                            // Generate JSON report without failing build immediately
                             sh """
                                 trivy fs \
                                     --scanners vuln,secret,misconfig \
@@ -251,13 +250,12 @@ pipeline {
             when {
                 allOf {
                     branch 'main'
-                    expression { return params.DEPLOY_TO_K8S }
-                    // If parameter is null (first run), default to true; otherwise check parameter value
-                    return params.DEPLOY_TO_K8S == null ? true : params.DEPLOY_TO_K8S
+                    expression { 
+                        return params.DEPLOY_TO_K8S == null ? true : params.DEPLOY_TO_K8S 
+                    }
                 }
             }
             steps {
-                // Corrected credential ID reference
                 withCredentials([
                     usernamePassword(
                         credentialsId: "${AWS_CREDENTIALS}",
