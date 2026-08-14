@@ -271,20 +271,7 @@ pipeline {
 
                     sh """
                         kubectl get namespace ${K8S_NAMESPACE} || kubectl create namespace ${K8S_NAMESPACE}
-
-                        MANIFESTS=\$(find kubernetes -type f \\( -name '*.yaml' -o -name '*.yml' -o -name '*.json' \\))
-                        echo "Found manifests:"
-                        echo "\$MANIFESTS"
-
-                        if [ -z "\$MANIFESTS" ]; then
-                            echo "ERROR: no .yaml/.yml/.json manifests found under kubernetes/"
-                            exit 1
-                        fi
-
-                        for f in \$MANIFESTS; do
-                            echo "Applying \$f"
-                            kubectl apply -n ${K8S_NAMESPACE} -f "\$f"
-                        done
+                        kubectl apply -n ${K8S_NAMESPACE} -k kubernetes/base
                     """
 
                     script {
