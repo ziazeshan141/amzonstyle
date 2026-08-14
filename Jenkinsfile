@@ -291,3 +291,24 @@ pipeline {
                 }
             }
         }
+
+    }
+
+    post {
+        success {
+            echo 'CI/CD PIPELINE SUCCESSFUL'
+        }
+        failure {
+            echo 'CI/CD PIPELINE FAILED'
+        }
+        always {
+            echo 'Build completed.'
+            sh 'docker logout "${REGISTRY}" || true'
+            script {
+                services.each { service ->
+                    sh "docker image rm ${REGISTRY}/${service}:${IMAGE_TAG} 2>/dev/null || true"
+                }
+            }
+        }
+    }
+}
