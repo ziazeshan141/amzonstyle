@@ -248,12 +248,11 @@ pipeline {
 
         stage('Deploy & Verify Kubernetes') {
             when {
-                allOf {
-                    branch 'main'
-                    expression { 
-                        // Default to TRUE if params.DEPLOY_TO_K8S is not explicitly set to false
-                        return params.DEPLOY_TO_K8S != false
-                    }
+                expression { 
+                    def currentBranch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: env.GIT_BRANCH_NAME ?: 'main'
+                    def isMain = currentBranch.contains('main')
+                    def shouldDeploy = params.DEPLOY_TO_K8S != false
+                    return isMain && shouldDeploy
                 }
             }
             steps {
@@ -292,23 +291,3 @@ pipeline {
                 }
             }
         }
-    }
-
-    post {
-        success {
-            echo 'CI/CD PIPELINE SUCCESSFUL'
-        }
-        failure {
-            echo 'CI/CD PIPELINE FAILED'
-        }
-        always {
-            echo 'Build completed.'
-            sh 'docker logout "${REGISTRY}" || true'
-            script {
-                services.each { service ->
-                    sh "docker image rm ${REGISTRY}/${service}:${IMAGE_TAG} 2>/dev/null || true"
-                }
-            }
-        }
-    }
-}
