@@ -367,9 +367,8 @@ pipeline {
                         sh """
                             trivy image \
                             --severity HIGH,CRITICAL \
-                            --skip-dirs 'node_modules,target' \
                             --exit-code 1 \
-                            .
+                            ${image}
                         """
                     }
                 }
