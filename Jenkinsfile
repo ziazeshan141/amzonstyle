@@ -252,6 +252,8 @@ pipeline {
                 allOf {
                     branch 'main'
                     expression { return params.DEPLOY_TO_K8S }
+                    // If parameter is null (first run), default to true; otherwise check parameter value
+                    return params.DEPLOY_TO_K8S == null ? true : params.DEPLOY_TO_K8S
                 }
             }
             steps {
