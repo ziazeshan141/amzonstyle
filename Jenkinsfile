@@ -498,95 +498,49 @@ pipeline {
 
 
         // ====================================================================
-        // Kubernetes Deployment
+        // Kubernetes Deployment & Verification
         // ====================================================================
 
-        stage('Deploy to Kubernetes') {
-
+        stage('Deploy & Verify Kubernetes') {
             when {
-
                 allOf {
-
                     branch 'main'
-
-                    expression {
-                        return params.DEPLOY_TO_K8S
-                    }
+                    expression { return params.DEPLOY_TO_K8S }
                 }
             }
-
             steps {
+                // Ensure AWS credentials are consistently injected for EKS
+                withAWS(credentials: 'aws-jenkins-credentials', region: "${AWS_REGION}") {
+                    
+                    // Update kubeconfig once for the entire stage
+                    sh '''
+                        aws eks update-kubeconfig \
+                            --region "${AWS_REGION}" \
+                            --name "${EKS_CLUSTER_NAME}"
+                    '''
 
-                sh '''
-                aws eks update-kubeconfig \
-                    --region "${AWS_REGION}" \
-                    --name "${EKS_CLUSTER_NAME}"
-                '''
+                    script {
+                        services.each { service ->
+                            def image = "${REGISTRY}/${service}:${IMAGE_TAG}"
 
-                script {
+                            echo "Deploying ${service} image: ${image}"
+                            sh """
+                                kubectl -n ${K8S_NAMESPACE} set image \
+                                    deployment/${service} \
+                                    ${service}=${image}
+                            """
 
-                    services.each { service ->
-
-                        def image =
-                            "${REGISTRY}/${service}:${IMAGE_TAG}"
-
-                        sh """
-                            kubectl \
-                            -n ${K8S_NAMESPACE} \
-                            set image \
-                            deployment/${service} \
-                            ${service}=${image}
-                        """
+                            echo "Checking rollout status for: ${service}"
+                            sh """
+                                kubectl -n ${K8S_NAMESPACE} rollout status \
+                                    deployment/${service} \
+                                    --timeout=300s
+                            """
+                        }
                     }
                 }
             }
         }
-
-
-        // ====================================================================
-        // Deployment Verification
-        // ====================================================================
-
-        stage('Verify Kubernetes Deployment') {
-
-            when {
-
-                allOf {
-
-                    branch 'main'
-
-                    expression {
-                        return params.DEPLOY_TO_K8S
-                    }
-                }
-            }
-
-            steps {
-
-                sh '''
-                    aws eks update-kubeconfig \
-                    --region "${AWS_REGION}" \
-                    --name "${EKS_CLUSTER_NAME}"
-                '''
-
-                script {
-
-                    services.each { service ->
-
-                        echo "Checking rollout: ${service}"
-
-                        sh """
-                            kubectl \
-                            -n ${K8S_NAMESPACE} \
-                            rollout status \
-                            deployment/${service} \
-                            --timeout=300s
-                        """
-                    }
-                }
-            }
-        }
-    }
 
 
     // ========================================================================
