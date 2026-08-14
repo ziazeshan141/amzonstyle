@@ -251,7 +251,8 @@ pipeline {
                 allOf {
                     branch 'main'
                     expression { 
-                        return params.DEPLOY_TO_K8S == null ? true : params.DEPLOY_TO_K8S 
+                        // Default to TRUE if params.DEPLOY_TO_K8S is not explicitly set to false
+                        return params.DEPLOY_TO_K8S != false
                     }
                 }
             }
