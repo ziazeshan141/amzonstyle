@@ -59,7 +59,7 @@ pipeline {
         GIT_BRANCH         = 'main'
         GITHUB_CREDENTIALS = 'github-credentials'
         AWS_CREDENTIALS    = 'aws-ecr-credentials'
-        K8S_NAMESPACE      = 'microservices'
+        K8S_NAMESPACE      = 'amazon-demo'
     }
 
     stages {
@@ -270,8 +270,7 @@ pipeline {
                     '''
 
                     sh """
-                        kubectl get namespace ${K8S_NAMESPACE} || kubectl create namespace ${K8S_NAMESPACE}
-                        kubectl apply -n ${K8S_NAMESPACE} -k kubernetes/base
+                        kubectl apply -k kubernetes/base
                     """
 
                     script {
